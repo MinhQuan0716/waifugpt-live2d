@@ -1,0 +1,8 @@
+{
+    "Type": "Live2D Expression",
+    "Parameters": [
+        { "Id": "ParamBrowLForm", "Value": -1, "Blend": "Add" },
+        { "Id": "ParamBrowLY", "Value": -0.7, "Blend": "Add" },
+        { "Id": "ParamMouthForm", "Value": -0.5, "Blend": "Add" }
+    ]
+}
