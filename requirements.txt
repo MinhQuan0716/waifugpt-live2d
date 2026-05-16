@@ -24,5 +24,6 @@ opencc
 cmake
 cython
 uvicorn
+python-multipart
 pyopenjtalk
 python-dotenv
