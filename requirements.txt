@@ -23,5 +23,6 @@ num_thai
 opencc
 cmake
 cython
+uvicorn
 pyopenjtalk
 python-dotenv
