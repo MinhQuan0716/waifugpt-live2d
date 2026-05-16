@@ -21,14 +21,15 @@ from contextlib import asynccontextmanager
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(BASE_DIR)
 sys.path.insert(0, PARENT_DIR)
+sys.path.insert(0, BASE_DIR)
 
-from chatbot import Chatbot
-from models import SynthesizerTrn
+from backend.chatbot import Chatbot
+from backend.models import SynthesizerTrn
 from text import text_to_sequence
-import utils
+import backend.utils
 import librosa
-import commons
-from mel_proccessing import spectrogram_torch
+import backend.commons
+from backend.mel_proccessing import spectrogram_torch
 from dotenv import load_dotenv
 import soundfile as sf
 import tempfile
