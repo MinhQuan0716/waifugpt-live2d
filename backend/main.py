@@ -26,9 +26,9 @@ sys.path.insert(0, BASE_DIR)
 from backend.chatbot import Chatbot
 from backend.models import SynthesizerTrn
 from text import text_to_sequence
-import backend.utils
+import utils
 import librosa
-import backend.commons
+import commons
 from backend.mel_proccessing import spectrogram_torch
 from dotenv import load_dotenv
 import soundfile as sf
