@@ -16,7 +16,7 @@ app_port: 7860
 ![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76b900?style=for-the-badge&logo=nvidia)
 ![Docker](https://img.shields.io/badge/Docker-2CA5E0?style=for-the-badge&logo=docker)
 
-A full-stack AI companion web application featuring a **Live2D animated waifu** that listens, responds, and expresses emotions in real time. Powered by a multimodal LLM (Kimi K2.6 via NVIDIA NIM), a Japanese TTS engine, and a Pixi.js Live2D renderer — all served from a single FastAPI backend.
+A full-stack AI companion web application featuring a **Live2D animated waifu** that listens, responds, and expresses emotions in real time. Powered by a multimodal LLM (mistral-medium-3.5-128b via NVIDIA NIM), a Japanese TTS engine, and a Pixi.js Live2D renderer — all served from a single FastAPI backend.
 
 ---
 
