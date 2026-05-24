@@ -27,3 +27,4 @@ uvicorn
 python-multipart
 pyopenjtalk
 python-dotenv
+httpx

@@ -17,12 +17,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
-
+from fastapi.responses import StreamingResponse
+import asyncio
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(BASE_DIR)
 sys.path.insert(0, PARENT_DIR)
 sys.path.insert(0, BASE_DIR)
-
+FRONTEND_DIR = os.path.join(PARENT_DIR, 'frontend')
 from backend.chatbot import Chatbot
 from backend.models import SynthesizerTrn
 from text import text_to_sequence
@@ -39,7 +40,7 @@ limitation = os.getenv("SYSTEM") == "spaces"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, '..', 'frontend')
+# FRONTEND_DIR = os.path.join(BASE_DIR, '..', 'frontend')
 
 # Initialize FastAPI
 @asynccontextmanager
@@ -57,7 +58,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="fronted")
+app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 # Initialize chatbot
 chatbot = Chatbot(
     model="mistralai/mistral-medium-3.5-128b",
@@ -68,6 +69,14 @@ chatbot = Chatbot(
     stream=False,
     reasoning_effort= "high"
 )
+
+# ── NEW: Memory Models ───────────────────────────────────────
+class MemoryBlob(BaseModel):
+    user_name: Optional[str] = "darling"
+    facts: list[str] = []
+    relationship_level: int = 1
+    last_seen: Optional[str] = None
+    mood_history: list[str] = []
 
 # Load TTS on startup
 
@@ -239,7 +248,77 @@ async def chat(
         "audio": audio_b64,
         "emotion": emotion,
     })
+@app.post("/chat-stream")
+async def chat_stream(
+    text: str = Form(...),
+    image: Union[UploadFile, None] = File(default=None),
+):
+    image_path = None
+    if image is not None and image.filename:
+        content = await image.read()
+        if content:
+            ext = image.filename.split(".")[-1] if "." in image.filename else "png"
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}")
+            tmp.write(content)
+            tmp.close()
+            image_path = tmp.name
 
+    async def event_generator():
+        try:
+            # ── Phase 1: LLM ─────────────────────────────────────
+            raw_response = await chatbot.generate_response_async(
+                text=text, image_path=image_path
+            )
+            en_text, ja_text = parse_response(raw_response)
+            emotion = detect_emotion(en_text)
+
+            # Send text immediately — frontend shows this right away
+            text_event = json.dumps({
+                "type": "text",
+                "en": en_text,
+                "ja": ja_text,
+                "emotion": emotion,
+            })
+            yield f"data: {text_event}\n\n"
+
+            # ── Phase 2: TTS ──────────────────────────────────────
+            audio_b64 = None
+            if ja_text and tts_fn:
+                # Run blocking TTS in thread so we don't block the event loop
+                loop = asyncio.get_event_loop()
+                status, audio_data = await loop.run_in_executor(
+                    None, lambda: tts_fn(ja_text, 73, 1.0, False)
+                )
+                if status == "Success":
+                    sampling_rate, audio_array = audio_data
+                    audio_b64 = audio_to_base64(sampling_rate, audio_array)
+
+            # Send audio as second event
+            audio_event = json.dumps({
+                "type": "audio",
+                "audio": audio_b64,
+            })
+            yield f"data: {audio_event}\n\n"
+
+            # Signal stream is done
+            yield "data: {\"type\": \"done\"}\n\n"
+
+        except Exception as e:
+            error_event = json.dumps({"type": "error", "message": str(e)})
+            yield f"data: {error_event}\n\n"
+
+        finally:
+            if image_path and os.path.exists(image_path):
+                os.remove(image_path)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # important for nginx/HuggingFace proxies
+        }
+    )
 
 @app.post("/reset")
 async def reset():
@@ -252,3 +331,47 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok", "speakers": len(speakers) if speakers else 0}
+# ── NEW: Memory Routes ───────────────────────────────────────
+
+@app.post("/load-memory")
+async def load_memory(blob: MemoryBlob):
+    """
+    Called by frontend on page load.
+    Sends the localStorage memory blob → injected into Nagisa's system prompt.
+    """
+    chatbot.load_memory(blob.model_dump())
+    print(f"Memory loaded: {blob.model_dump()}")
+    return {"status": "ok", "facts_loaded": len(blob.facts)}
+
+
+@app.post("/summarize-memory")
+async def summarize_memory():
+    """
+    Called by frontend every 5 messages.
+    Extracts new facts from recent history → returns merged blob for localStorage.
+    """
+    new_facts = chatbot.extract_memory_facts(last_n=6)
+
+    # Merge with existing memory, deduplicate facts
+    existing_facts = chatbot.memory.get("facts", [])
+    merged_facts = list(dict.fromkeys(existing_facts + new_facts))  # preserve order, dedupe
+
+    # Update relationship level based on total exchanges
+    total_exchanges = len(chatbot.history)
+    relationship_level = min(5, 1 + total_exchanges // 10)  # levels up every 10 messages, max 5
+
+    # Update mood history (last 10 moods only)
+    mood_history = chatbot.memory.get("mood_history", [])
+
+    updated_blob = {
+        **chatbot.memory,
+        "facts": merged_facts,
+        "relationship_level": relationship_level,
+        "mood_history": mood_history[-10:],
+    }
+
+    # Keep chatbot's in-memory copy up to date too
+    chatbot.memory = updated_blob
+
+    print(f"Memory summarized: {len(new_facts)} new facts, {len(merged_facts)} total")
+    return updated_blob  # frontend saves this back to localStorage
