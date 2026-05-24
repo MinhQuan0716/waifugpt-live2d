@@ -500,8 +500,10 @@ document.getElementById("preview-remove").addEventListener("click", () => {
 });
 
 // ── Boot ──────────────────────────────────────────────────────
-loadMemory(); // fire early so backend is briefed ASAP
-loadModel().then(() => {
-  checkAndCaptureName(); // only show modal after loading screen is gone
+document.addEventListener("DOMContentLoaded", () => {
+  loadMemory();
+  loadModel().then(() => {
+    checkAndCaptureName();
+  });
 });
 // ── END NEW ──────────────────────────────────────────────────
